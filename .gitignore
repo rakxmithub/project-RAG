@@ -5,3 +5,5 @@ data\
 chroma_db\S
 
 __pycache__\
+
+src\
