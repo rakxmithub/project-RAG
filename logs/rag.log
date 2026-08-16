@@ -31,3 +31,14 @@
 2026-08-16 10:13:02,263 | INFO | RAG Pipeline initialized successfully.
 2026-08-16 10:13:43,135 | INFO | RAG Pipeline initialized successfully.
 2026-08-16 10:14:27,211 | INFO | RAG Pipeline initialized successfully.
+2026-08-16 10:17:14,336 | INFO | RAG Pipeline initialized successfully.
+2026-08-16 10:17:37,212 | INFO | QUERY | what is rag?
+2026-08-16 10:17:38,221 | INFO | REWRITTEN_QUERY | What is Retrieval-Augmented Generation (RAG)?
+2026-08-16 10:17:39,374 | INFO | RETRIEVAL | documents=5
+2026-08-16 10:17:39,551 | INFO | RERANKING | top_documents=3
+2026-08-16 10:17:41,679 | INFO | ANSWER | length=451
+2026-08-16 10:17:59,934 | INFO | Conversation memory cleared.
+2026-08-16 10:18:00,507 | INFO | Conversation memory cleared.
+2026-08-16 10:18:01,204 | INFO | Conversation memory cleared.
+2026-08-16 10:18:01,714 | INFO | Conversation memory cleared.
+2026-08-16 10:18:02,604 | INFO | Conversation memory cleared.
