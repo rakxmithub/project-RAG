@@ -1,0 +1,10 @@
+[
+  {
+    "question": "What is RAG?",
+    "answer": "Retrieval-Augmented Generation"
+  },
+  {
+    "question": "What is LangChain?",
+    "answer": "A framework for LLM applications"
+  }
+]

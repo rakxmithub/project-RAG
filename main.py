@@ -1,96 +1,242 @@
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
+
+from src.pipeline import RAGPipeline
 from src.loader import main_loader
 from src.splitter import split_documents
 from src.embedding import get_embedding
 from src.vectorstore import create_vectorstore
-from src.retriever import get_retriever
-from src.llm import get_llm
 
 
 def main():
+
     print("=" * 50)
     print("شروع پروژه RAG")
     print("=" * 50)
 
-    # 1. Load PDF
+    # ==========================================
+    # 1. Load Documents
+    # ==========================================
+
     print("\n[1] Loading PDF...")
-    documents = main_loader("data")
-    print(f"تعداد صفحات: {len(documents)}")
 
+    documents = main_loader(
+        "data"
+    )
+
+    print(
+        f"تعداد صفحات: {len(documents)}"
+    )
+
+    # ==========================================
     # 2. Split Documents
-    print("\n[2] Splitting Documents...")
-    chunks = split_documents(documents)
-    print(f"تعداد Chunkها: {len(chunks)}")
+    # ==========================================
 
+    print("\n[2] Splitting Documents...")
+
+    chunks = split_documents(
+        documents
+    )
+
+    print(
+        f"تعداد Chunkها: {len(chunks)}"
+    )
+
+    # ==========================================
     # 3. Embedding
+    # ==========================================
+
     print("\n[3] Creating Embedding Model...")
+
     embedding = get_embedding()
 
+    # ==========================================
     # 4. Vector Store
+    # ==========================================
+
     print("\n[4] Creating Vector Store...")
-    vectorstore = create_vectorstore(chunks, embedding)
-    print("✅ Vector Store ساخته شد.")
 
-    # 5. Retriever
-    print("\n[5] Creating Retriever...")
-    retriever = get_retriever(vectorstore)
+    vectorstore = create_vectorstore(
+        chunks,
+        embedding
+    )
 
-    # 6. Ask Question
-    question = input("\nسؤال خود را وارد کنید: ")
-    print(f"\nQuestion: {question}")
+    print(
+        "✅ Vector Store ساخته شد."
+    )
 
-    docs = retriever.invoke(question)
+    # ==========================================
+    # 5. RAG Pipeline
+    # ==========================================
 
-    if not docs:
-        print("هیچ سندی پیدا نشد.")
-        return
+    print("\n[5] Creating RAG Pipeline...")
 
-    print(f"\n{len(docs)} Chunk پیدا شد.\n")
+    rag = RAGPipeline(
+        vectorstore,
+        chunks
+    )
 
-    for i, doc in enumerate(docs, start=1):
-        print("=" * 60)
-        print(f"Chunk {i}")
-        print("=" * 60)
-        print(doc.page_content[:400])
+    print(
+        "\nبرای خروج exit یا quit وارد کنید."
+    )
+
+    print(
+        "برای پاک کردن Memory عبارت clear را وارد کنید.\n"
+    )
+
+    # ==========================================
+    # 6. Chat Loop
+    # ==========================================
+
+    while True:
+
+        question = input(
+            "سؤال خود را وارد کنید: "
+        ).strip()
+
+        # ======================================
+        # Exit
+        # ======================================
+
+        if question.lower() in [
+            "exit",
+            "quit"
+        ]:
+
+            print(
+                "خروج از برنامه..."
+            )
+
+            break
+
+        # ======================================
+        # Clear Memory
+        # ======================================
+
+        if question.lower() == "clear":
+
+            rag.clear_memory()
+
+            continue
+
+        # ======================================
+        # Empty Question
+        # ======================================
+
+        if not question:
+
+            continue
+
+        # ======================================
+        # Run RAG Pipeline
+        # ======================================
+
+        print(
+            "\nدر حال پردازش...\n"
+        )
+
+        # مهم:
+        # main.py از answer() استفاده می‌کند
+        # stream_answer() برای Streamlit است.
+
+        result = rag.answer(
+            question
+        )
+
+        # ======================================
+        # Answer
+        # ======================================
+
+        answer = result["answer"]
+
+        sources = result["sources"]
+
+        print(
+            "\n" + "=" * 60
+        )
+
+        print(
+            "پاسخ مدل"
+        )
+
+        print(
+            "=" * 60
+        )
+
+        print(
+            answer
+        )
+
+        # ======================================
+        # Sources
+        # ======================================
+
+        print(
+            "\n" + "=" * 60
+        )
+
+        print(
+            "Sources"
+        )
+
+        print(
+            "=" * 60
+        )
+
+        if not sources:
+
+            print(
+                "No sources found."
+            )
+
+        else:
+
+            for i, doc in enumerate(
+                sources,
+                start=1
+            ):
+
+                metadata = doc.metadata
+
+                source = metadata.get(
+                    "source",
+                    "Unknown"
+                )
+
+                page = metadata.get(
+                    "page",
+                    "Unknown"
+                )
+
+                # PyPDF page index معمولاً از 0 شروع می‌شود
+                if isinstance(page, int):
+
+                    page = page + 1
+
+                print(
+                    f"\n[{i}]"
+                )
+
+                print(
+                    f"File: {source}"
+                )
+
+                print(
+                    f"Page: {page}"
+                )
+
         print()
 
-    # 7. LLM
-    print("\n[6] Loading LLM...")
-    llm = get_llm()
 
-    context = "\n\n".join(doc.page_content for doc in docs)
-
-    prompt = f"""
-You are a helpful AI assistant.
-
-Answer ONLY using the provided context.
-If the answer is not in the context, say:
-"I don't know based on the provided context."
-
-Context:
-{context}
-
-Question:
-{question}
-
-Answer:
-"""
-
-    print("\nGenerating answer...\n")
-
-    response = llm.invoke(prompt)
-
-    print("=" * 60)
-    print("پاسخ مدل")
-    print("=" * 60)
-    print(response.content)
-
+# ==============================================
+# Run Application
+# ==============================================
 
 if __name__ == "__main__":
+
+
+
+    
     main()
-
-
