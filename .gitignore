@@ -1,7 +1,19 @@
-.env
+.venv/
+venv/
 
-data/
+.env
+.env.*
+
+__pycache__/
+*.pyc
+
+logs/
+*.log
 
 chroma_db/
 
-__pycache__/
+.idea/
+.vscode/
+
+.DS_Store
+Thumbs.db

@@ -5,95 +5,42 @@ class QueryRewriter:
 
     def __init__(self):
 
+        print("Initializing Query Rewriter...")
+
         self.llm = get_llm()
 
 
-    def rewrite(self, question, history=None):
+    # =========================================================
+    # REWRITE
+    # =========================================================
 
-        # ==========================================
-        # Build conversation history
-        # ==========================================
-
-        history_text = ""
-
-        if history:
-
-            history_parts = []
-
-            for message in history:
-
-                role = message.get("role", "")
-                content = message.get("content", "")
-
-                if role == "user":
-
-                    history_parts.append(
-                        f"User: {content}"
-                    )
-
-                elif role == "assistant":
-
-                    history_parts.append(
-                        f"Assistant: {content}"
-                    )
-
-            history_text = "\n".join(
-                history_parts
-            )
-
-
-        # ==========================================
-        # Query Rewriting Prompt
-        # ==========================================
+    def rewrite(self, question):
 
         prompt = f"""
-You are a query rewriting system for a
-Retrieval-Augmented Generation (RAG) system.
+You are a query rewriting assistant for a Retrieval-Augmented
+Generation system.
 
-Your job is to rewrite the user's current question
-into a clear, self-contained search query.
-
-Conversation history:
---------------------
-{history_text}
---------------------
-
-Current user question:
---------------------
-{question}
---------------------
+Rewrite the user's question into a clear, standalone search query.
 
 Rules:
 
 1. Preserve the original meaning.
-2. Use conversation history when necessary.
-3. Resolve references such as:
-   "it", "its", "they", "them", "this", "that".
-4. Make the query self-contained.
-5. Keep important technical terms.
-6. Do not answer the question.
-7. Do not add unsupported information.
-8. If the question is already clear, keep it mostly unchanged.
-9. Return ONLY the rewritten search query.
-10. Do not add explanations.
+2. Expand abbreviations when useful.
+3. If the question refers to something implicitly, make it explicit.
+4. Do not answer the question.
+5. Do not add information that is not implied by the question.
+6. Return ONLY the rewritten query.
+7. Do not use quotes.
+8. Do not explain your changes.
 
-Rewritten search query:
+Original question:
+{question}
+
+Rewritten query:
 """
 
+        response = self.llm.invoke(prompt)
 
-        # ==========================================
-        # LLM
-        # ==========================================
+        rewritten = response.content.strip()
 
-        response = self.llm.invoke(
-            prompt
-        )
-
-
-        # ==========================================
-        # Clean result
-        # ==========================================
-
-        rewritten_query = response.content.strip()
-
-        return rewritten_query
+        return rewritten

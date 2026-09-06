@@ -1,87 +1,271 @@
-from src.hybrid_retriever import create_hybrid_retriever
-from src.reranker import get_reranker, rerank_documents
-from src.llm import get_llm
-from src.query_rewriter import QueryRewriter
-from src.memory import ConversationMemory
+import time
+
+
+# ============================================================
+# RETRIEVER
+# ============================================================
+
+from src.hybrid_retriever import (
+    create_hybrid_retriever
+)
+
+
+# ============================================================
+# RERANKER
+# ============================================================
+
+from src.reranker import (
+    get_reranker,
+    rerank_documents
+)
+
+
+# ============================================================
+# LLM
+# ============================================================
+
+from src.llm import (
+    get_llm
+)
+
+
+# ============================================================
+# QUERY REWRITER
+# ============================================================
+
+from src.query_rewriter import (
+    QueryRewriter
+)
+
+
+# ============================================================
+# LOGGER
+# ============================================================
 
 from src.logger import (
     log_info,
+    log_warning,
     log_query,
     log_rewritten_query,
     log_retrieval,
     log_reranking,
     log_answer,
-    log_warning,
+    log_request,
+    log_latency,
+    log_exception
 )
 
 
+# ============================================================
+# MEMORY
+# ============================================================
+
+try:
+
+    from langchain_classic.memory import (
+        ConversationBufferMemory
+    )
+
+except ImportError:
+
+    ConversationBufferMemory = None
+
+
+# ============================================================
+# RAG PIPELINE
+# ============================================================
+
 class RAGPipeline:
 
-    def __init__(self, vectorstore, chunks):
+    def __init__(
+        self,
+        vectorstore,
+        chunks
+    ):
 
-        print("Creating Hybrid Retriever...")
+        # ====================================================
+        # 1. HYBRID RETRIEVER
+        # ====================================================
+
+        print(
+            "Creating Hybrid Retriever..."
+        )
 
         self.retriever = create_hybrid_retriever(
             vectorstore,
             chunks
         )
 
-        print("Loading Reranker...")
+
+        # ====================================================
+        # 2. RERANKER
+        # ====================================================
+
+        print(
+            "Loading Reranker..."
+        )
 
         self.reranker = get_reranker()
 
-        print("Loading LLM...")
+
+        # ====================================================
+        # 3. LLM
+        # ====================================================
+
+        print(
+            "Loading LLM..."
+        )
 
         self.llm = get_llm()
 
-        print("Loading Query Rewriter...")
+
+        # ====================================================
+        # 4. QUERY REWRITER
+        # ====================================================
+
+        print(
+            "Loading Query Rewriter..."
+        )
+
+        # مهم:
+        # QueryRewriter فعلی بدون argument ساخته می‌شود.
 
         self.query_rewriter = QueryRewriter()
 
-        print("Creating Conversation Memory...")
 
-        self.memory = ConversationMemory()
+        # ====================================================
+        # 5. MEMORY
+        # ====================================================
+
+        print(
+            "Creating Conversation Memory..."
+        )
+
+        if ConversationBufferMemory:
+
+            self.memory = ConversationBufferMemory(
+                return_messages=True
+            )
+
+        else:
+
+            self.memory = None
+
 
         log_info(
             "RAG Pipeline initialized successfully."
         )
 
 
-    # ==================================================
-    # RETRIEVAL
-    # ==================================================
+    # ========================================================
+    # MEMORY
+    # ========================================================
 
-    def retrieve(self, question):
+    def get_history(self):
 
-        print("Retrieving documents...")
+        if self.memory is None:
 
-        docs = self.retriever.invoke(
-            question
+            return []
+
+        try:
+
+            return self.memory.chat_memory.messages
+
+        except Exception:
+
+            return []
+
+
+    # ========================================================
+    # CLEAR MEMORY
+    # ========================================================
+
+    def clear_memory(self):
+
+        if self.memory is not None:
+
+            try:
+
+                self.memory.clear()
+
+            except Exception:
+
+                pass
+
+        log_info(
+            "Conversation memory cleared."
         )
 
         print(
-            f"Retrieved documents: {len(docs)}"
+            "Conversation memory cleared."
         )
 
-        log_retrieval(
-            len(docs)
+
+    # ========================================================
+    # RETRIEVE
+    # ========================================================
+
+    def retrieve(
+        self,
+        question
+    ):
+
+        print(
+            "Retrieving documents..."
         )
 
-        return docs
+        start = time.perf_counter()
+
+        try:
+
+            docs = self.retriever.invoke(
+                question
+            )
+
+            latency = (
+                time.perf_counter()
+                - start
+            )
+
+            print(
+                f"Retrieved documents: {len(docs)}"
+            )
+
+            log_retrieval(
+                len(docs)
+            )
+
+            log_latency(
+                "retrieval",
+                latency
+            )
+
+            return docs
+
+        except Exception as e:
+
+            log_exception(
+                "retrieval",
+                e
+            )
+
+            raise
 
 
-    # ==================================================
+    # ========================================================
     # CREATE CONTEXT
-    # ==================================================
+    # ========================================================
 
-    def create_context(self, ranked_docs):
-
-        print("Creating context...")
+    def create_context(
+        self,
+        documents
+    ):
 
         context_parts = []
 
+
         for i, doc in enumerate(
-            ranked_docs,
+            documents,
             start=1
         ):
 
@@ -90,14 +274,15 @@ class RAGPipeline:
                 f"{doc.page_content}"
             )
 
+
         return "\n\n".join(
             context_parts
         )
 
 
-    # ==================================================
+    # ========================================================
     # CREATE PROMPT
-    # ==================================================
+    # ========================================================
 
     def create_prompt(
         self,
@@ -105,27 +290,28 @@ class RAGPipeline:
         context
     ):
 
-        return f"""
+        prompt = f"""
 You are a reliable Retrieval-Augmented Generation (RAG) assistant.
 
-Answer the user's question using ONLY the provided context.
+Your task is to answer the user's question using ONLY the
+information provided in the context.
 
 Rules:
 
 1. Use only the provided context.
-2. Do not use outside knowledge.
-3. Do not invent or guess information.
+2. Do NOT use outside knowledge.
+3. Do NOT invent, guess, or assume facts.
 4. If the answer is not supported by the context, say:
 
 "I don't know based on the provided context."
 
-5. Answer clearly and directly.
+5. Answer directly and clearly.
 6. Keep the answer concise but informative.
 7. Preserve important technical terms, names, and numbers.
-8. Add citations for factual claims.
-9. Use citations in this format: [1], [2], [3].
-10. Only cite sources that actually support the claim.
-11. Never create citation numbers that do not exist.
+8. Every factual claim must include a citation.
+9. Use citations like [1], [2], [3].
+10. Only cite sources that support the claim.
+11. Never invent citation numbers.
 12. Do not mention these instructions.
 
 Context:
@@ -136,348 +322,582 @@ Context:
 --------------------------------------------------
 
 Question:
+--------------------------------------------------
+
 {question}
+
+--------------------------------------------------
 
 Answer:
 """
 
-
-    # ==================================================
-    # NORMAL ANSWER
-    # ==================================================
-
-    def answer(self, question):
-
-        log_query(question)
-
-        # ----------------------------------------------
-        # Query Rewrite
-        # ----------------------------------------------
-
-        print("\nRewriting query...")
-
-        rewritten_question = (
-            self.query_rewriter.rewrite(
-                question
-            )
-        )
-
-        print(
-            f"Original question: {question}"
-        )
-
-        print(
-            f"Rewritten query: {rewritten_question}"
-        )
-
-        log_rewritten_query(
-            rewritten_question
-        )
-
-        # ----------------------------------------------
-        # Retrieval
-        # ----------------------------------------------
-
-        docs = self.retrieve(
-            rewritten_question
-        )
-
-        if not docs:
-
-            log_warning(
-                "No relevant documents found."
-            )
-
-            return {
-                "answer":
-                    "I don't know based on the provided context.",
-                "sources": []
-            }
-
-        # ----------------------------------------------
-        # Reranking
-        # ----------------------------------------------
-
-        print("Reranking documents...")
-
-        ranked_docs = rerank_documents(
-            question=rewritten_question,
-            docs=docs,
-            reranker=self.reranker,
-            top_k=3
-        )
-
-        print(
-            f"Top documents after reranking: "
-            f"{len(ranked_docs)}"
-        )
-
-        log_reranking(
-            len(ranked_docs)
-        )
-
-        # ----------------------------------------------
-        # Context
-        # ----------------------------------------------
-
-        context = self.create_context(
-            ranked_docs
-        )
-
-        # ----------------------------------------------
-        # Prompt
-        # ----------------------------------------------
-
-        prompt = self.create_prompt(
-            question,
-            context
-        )
-
-        # ----------------------------------------------
-        # LLM
-        # ----------------------------------------------
-
-        print("\nGenerating answer...")
-
-        response = self.llm.invoke(
-            prompt
-        )
-
-        answer = response.content
-
-        log_answer(
-            answer
-        )
-
-        # ----------------------------------------------
-        # Memory
-        # ----------------------------------------------
-
-        self.memory.add_user_message(
-            question
-        )
-
-        self.memory.add_ai_message(
-            answer
-        )
-
-        return {
-            "answer": answer,
-            "sources": ranked_docs
-        }
+        return prompt
 
 
-    # ==================================================
-    # STREAM ANSWER
-    # ==================================================
+    # ========================================================
+    # SAVE MEMORY
+    # ========================================================
 
-    def stream_answer(self, question):
+    def save_memory(
+        self,
+        question,
+        answer
+    ):
 
-        log_query(question)
-
-        # ----------------------------------------------
-        # Query Rewrite
-        # ----------------------------------------------
-
-        print("\nRewriting query...")
-
-        rewritten_question = (
-            self.query_rewriter.rewrite(
-                question
-            )
-        )
-
-        print(
-            f"Original question: {question}"
-        )
-
-        print(
-            f"Rewritten query: {rewritten_question}"
-        )
-
-        log_rewritten_query(
-            rewritten_question
-        )
-
-
-        # ----------------------------------------------
-        # Retrieval
-        # ----------------------------------------------
-
-        docs = self.retrieve(
-            rewritten_question
-        )
-
-        if not docs:
-
-            message = (
-                "I don't know based on the provided context."
-            )
-
-            log_warning(
-                "No relevant documents found."
-            )
-
-            yield {
-                "type": "token",
-                "content": message
-            }
-
-            yield {
-                "type": "sources",
-                "sources": []
-            }
+        if self.memory is None:
 
             return
 
-
-        # ----------------------------------------------
-        # Reranking
-        # ----------------------------------------------
-
-        print(
-            "Reranking documents..."
-        )
-
-        ranked_docs = rerank_documents(
-            question=rewritten_question,
-            docs=docs,
-            reranker=self.reranker,
-            top_k=3
-        )
-
-        print(
-            f"Top documents after reranking: "
-            f"{len(ranked_docs)}"
-        )
-
-        log_reranking(
-            len(ranked_docs)
-        )
-
-
-        # ----------------------------------------------
-        # Context
-        # ----------------------------------------------
-
-        context = self.create_context(
-            ranked_docs
-        )
-
-
-        # ----------------------------------------------
-        # Prompt
-        # ----------------------------------------------
-
-        prompt = self.create_prompt(
-            question,
-            context
-        )
-
-
-        # ----------------------------------------------
-        # Streaming LLM
-        # ----------------------------------------------
-
-        print(
-            "\nGenerating answer..."
-        )
-
-        full_answer = ""
-
-
         try:
 
-            for chunk in self.llm.stream(
-                prompt
-            ):
+            self.memory.chat_memory.add_user_message(
+                question
+            )
 
-                # LangChain AIMessageChunk
-                if hasattr(
-                    chunk,
-                    "content"
-                ):
-
-                    token = chunk.content
-
-                else:
-
-                    token = str(chunk)
-
-
-                if token:
-
-                    full_answer += token
-
-                    yield {
-                        "type": "token",
-                        "content": token
-                    }
-
+            self.memory.chat_memory.add_ai_message(
+                answer
+            )
 
         except Exception as e:
 
             log_warning(
-                f"Streaming failed: {e}"
+                f"Memory update failed: {e}"
             )
 
-            # Fallback to normal invoke
+
+    # ========================================================
+    # ANSWER
+    # ========================================================
+
+    def answer(
+        self,
+        question
+    ):
+
+        request_start = time.perf_counter()
+
+        log_query(
+            question
+        )
+
+
+        try:
+
+            # ==================================================
+            # 1. QUERY REWRITING
+            # ==================================================
+
+            print(
+                "\nRewriting query..."
+            )
+
+            rewrite_start = time.perf_counter()
+
+
+            rewritten_question = (
+                self.query_rewriter.rewrite(
+                    question
+                )
+            )
+
+
+            rewrite_latency = (
+                time.perf_counter()
+                - rewrite_start
+            )
+
+
+            print(
+                f"Original question: "
+                f"{question}"
+            )
+
+            print(
+                f"Rewritten query: "
+                f"{rewritten_question}"
+            )
+
+
+            log_rewritten_query(
+                rewritten_question
+            )
+
+
+            log_latency(
+                "query_rewrite",
+                rewrite_latency
+            )
+
+
+            # ==================================================
+            # 2. RETRIEVAL
+            # ==================================================
+
+            docs = self.retrieve(
+                rewritten_question
+            )
+
+
+            if not docs:
+
+                answer = (
+                    "I don't know based on the provided context."
+                )
+
+                return {
+                    "answer": answer,
+                    "sources": []
+                }
+
+
+            # ==================================================
+            # 3. RERANKING
+            # ==================================================
+
+            print(
+                "Reranking documents..."
+            )
+
+
+            rerank_start = time.perf_counter()
+
+
+            ranked_docs = rerank_documents(
+                question=rewritten_question,
+                docs=docs,
+                reranker=self.reranker,
+                top_k=3
+            )
+
+
+            rerank_latency = (
+                time.perf_counter()
+                - rerank_start
+            )
+
+
+            print(
+                f"Top documents after reranking: "
+                f"{len(ranked_docs)}"
+            )
+
+
+            log_reranking(
+                len(ranked_docs)
+            )
+
+
+            log_latency(
+                "reranking",
+                rerank_latency
+            )
+
+
+            # ==================================================
+            # 4. CONTEXT
+            # ==================================================
+
+            print(
+                "Creating context..."
+            )
+
+
+            context_start = time.perf_counter()
+
+
+            context = self.create_context(
+                ranked_docs
+            )
+
+
+            context_latency = (
+                time.perf_counter()
+                - context_start
+            )
+
+
+            log_latency(
+                "context",
+                context_latency
+            )
+
+
+            # ==================================================
+            # 5. PROMPT
+            # ==================================================
+
+            prompt = self.create_prompt(
+                rewritten_question,
+                context
+            )
+
+
+            # ==================================================
+            # 6. GENERATION
+            # ==================================================
+
+            print(
+                "\nGenerating answer..."
+            )
+
+
+            generation_start = time.perf_counter()
+
+
             response = self.llm.invoke(
                 prompt
             )
 
-            full_answer = response.content
 
-            yield {
-                "type": "token",
-                "content": full_answer
+            answer = response.content
+
+
+            generation_latency = (
+                time.perf_counter()
+                - generation_start
+            )
+
+
+            log_answer(
+                answer
+            )
+
+
+            log_latency(
+                "generation",
+                generation_latency
+            )
+
+
+            # ==================================================
+            # 7. MEMORY
+            # ==================================================
+
+            self.save_memory(
+                question,
+                answer
+            )
+
+
+            # ==================================================
+            # 8. TOTAL LATENCY
+            # ==================================================
+
+            total_latency = (
+                time.perf_counter()
+                - request_start
+            )
+
+
+            log_request(
+                question=question,
+                rewritten_question=rewritten_question,
+                retrieved_count=len(docs),
+                reranked_count=len(ranked_docs),
+                latency=total_latency
+            )
+
+
+            # ==================================================
+            # 9. RETURN
+            # ==================================================
+
+            return {
+                "answer": answer,
+                "sources": ranked_docs
             }
 
 
-        # ----------------------------------------------
-        # Logging
-        # ----------------------------------------------
+        except Exception as e:
 
-        log_answer(
-            full_answer
-        )
+            log_exception(
+                "answer",
+                e
+            )
+
+            raise
 
 
-        # ----------------------------------------------
-        # Memory
-        # ----------------------------------------------
+    # ========================================================
+    # STREAM ANSWER
+    # ========================================================
 
-        self.memory.add_user_message(
+    def stream_answer(
+        self,
+        question
+    ):
+
+        """
+        Generator-based streaming.
+
+        IMPORTANT:
+        Sources are available through the generator
+        return value, not by result["sources"] directly.
+        """
+
+        request_start = time.perf_counter()
+
+        log_query(
             question
         )
 
-        self.memory.add_ai_message(
-            full_answer
-        )
+
+        try:
+
+            # ==================================================
+            # QUERY REWRITE
+            # ==================================================
+
+            print(
+                "\nRewriting query..."
+            )
 
 
-        # ----------------------------------------------
-        # Sources
-        # ----------------------------------------------
-
-        yield {
-            "type": "sources",
-            "sources": ranked_docs
-        }
+            rewrite_start = time.perf_counter()
 
 
-    # ==================================================
-    # CLEAR MEMORY
-    # ==================================================
+            rewritten_question = (
+                self.query_rewriter.rewrite(
+                    question
+                )
+            )
 
-    def clear_memory(self):
 
-        self.memory.clear()
+            rewrite_latency = (
+                time.perf_counter()
+                - rewrite_start
+            )
 
-        log_info(
-            "Conversation memory cleared."
-        )
 
-        print(
-            "Memory cleared."
-        )
+            print(
+                f"Original question: "
+                f"{question}"
+            )
+
+
+            print(
+                f"Rewritten query: "
+                f"{rewritten_question}"
+            )
+
+
+            log_rewritten_query(
+                rewritten_question
+            )
+
+
+            log_latency(
+                "query_rewrite",
+                rewrite_latency
+            )
+
+
+            # ==================================================
+            # RETRIEVE
+            # ==================================================
+
+            docs = self.retrieve(
+                rewritten_question
+            )
+
+
+            if not docs:
+
+                answer = (
+                    "I don't know based on the provided context."
+                )
+
+                yield answer
+
+                return {
+                    "answer": answer,
+                    "sources": []
+                }
+
+
+            # ==================================================
+            # RERANK
+            # ==================================================
+
+            print(
+                "Reranking documents..."
+            )
+
+
+            ranked_docs = rerank_documents(
+                question=rewritten_question,
+                docs=docs,
+                reranker=self.reranker,
+                top_k=3
+            )
+
+
+            print(
+                f"Top documents after reranking: "
+                f"{len(ranked_docs)}"
+            )
+
+
+            log_reranking(
+                len(ranked_docs)
+            )
+
+
+            # ==================================================
+            # CONTEXT
+            # ==================================================
+
+            print(
+                "Creating context..."
+            )
+
+
+            context = self.create_context(
+                ranked_docs
+            )
+
+
+            # ==================================================
+            # PROMPT
+            # ==================================================
+
+            prompt = self.create_prompt(
+                rewritten_question,
+                context
+            )
+
+
+            # ==================================================
+            # GENERATION
+            # ==================================================
+
+            print(
+                "\nGenerating answer..."
+            )
+
+
+            generation_start = time.perf_counter()
+
+
+            full_answer = ""
+
+
+            try:
+
+                stream = self.llm.stream(
+                    prompt
+                )
+
+            except AttributeError:
+
+                stream = None
+
+
+            # ==================================================
+            # REAL STREAMING
+            # ==================================================
+
+            if stream is not None:
+
+                for chunk in stream:
+
+                    if hasattr(
+                        chunk,
+                        "content"
+                    ):
+
+                        text = chunk.content
+
+                    else:
+
+                        text = str(
+                            chunk
+                        )
+
+
+                    if text:
+
+                        full_answer += text
+
+                        yield text
+
+
+            # ==================================================
+            # FALLBACK
+            # ==================================================
+
+            else:
+
+                response = self.llm.invoke(
+                    prompt
+                )
+
+                full_answer = response.content
+
+                yield full_answer
+
+
+            generation_latency = (
+                time.perf_counter()
+                - generation_start
+            )
+
+
+            log_answer(
+                full_answer
+            )
+
+
+            log_latency(
+                "generation",
+                generation_latency
+            )
+
+
+            # ==================================================
+            # MEMORY
+            # ==================================================
+
+            self.save_memory(
+                question,
+                full_answer
+            )
+
+
+            # ==================================================
+            # TOTAL
+            # ==================================================
+
+            total_latency = (
+                time.perf_counter()
+                - request_start
+            )
+
+
+            log_request(
+                question=question,
+                rewritten_question=rewritten_question,
+                retrieved_count=len(docs),
+                reranked_count=len(ranked_docs),
+                latency=total_latency
+            )
+
+
+            # ==================================================
+            # RETURN
+            # ==================================================
+
+            return {
+                "answer": full_answer,
+                "sources": ranked_docs
+            }
+
+
+        except Exception as e:
+
+            log_exception(
+                "stream_answer",
+                e
+            )
+
+            raise
